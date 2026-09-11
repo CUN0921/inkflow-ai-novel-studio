@@ -1,0 +1,20 @@
+.chapter-plan-editor{margin:18px 7%;padding:14px;border:1px solid var(--line);border-radius:8px;background:#f8f5ef;display:grid;gap:12px}
+.chapter-plan-editor label{display:grid;gap:7px;font-size:12px;color:#6d655b}
+.chapter-plan-editor textarea{width:100%;font-size:13px;line-height:1.6;min-height:75px}
+.chapter-plan-editor input{width:150px}
+.editor-actions{flex-wrap:wrap}
+.chapter-choices{max-height:310px;overflow:auto;margin:14px 0;border-block:1px solid var(--line)}
+dialog label.chapter-choice{display:flex;align-items:flex-start;gap:12px;padding:12px;margin:0;border-bottom:1px solid var(--line);cursor:pointer}
+.chapter-choice input{accent-color:var(--accent);margin:3px 0;width:16px;height:16px;flex-shrink:0}
+.chapter-choice strong,.chapter-choice small{display:block;font-size:12px;line-height:1.6}
+.chapter-choice small{color:var(--muted);margin-top:4px;font-size:11px;white-space:pre-wrap}
+.chapter-choice:has(input:checked){background:#f2e6df}
+.queue-actions{display:flex;gap:8px;flex-wrap:wrap}
+.queue-actions button{font-size:11px;padding:8px}
+.context-snapshot{margin:14px 0;font-size:12px;color:var(--muted);line-height:1.8}
+.context-snapshot summary{cursor:pointer;color:var(--accent)}
+.context-snapshot pre{white-space:pre-wrap;max-height:240px;overflow:auto;font:12px/1.8 inherit;background:#f3eee6;padding:12px;border-radius:8px}
+.context-chip details{margin-top:8px}.context-chip details summary{cursor:pointer;color:var(--accent);font-size:10px}.context-chip pre{white-space:pre-wrap;max-height:180px;overflow:auto;margin:8px 0 0;background:#f3eee6;padding:8px;border-radius:6px;font:10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}
+.draft-notice{margin:0;padding:10px 7%;background:#fff4df;color:#84622e;font-size:11px;line-height:1.7;border-bottom:1px solid #ead8b6}
+.memory-pending{color:var(--accent);font-size:10px}
+button:disabled{opacity:.55;cursor:default;transform:none}

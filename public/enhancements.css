@@ -1,0 +1,18 @@
+.plan-details {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .55);
+  padding: 10px 12px;
+}
+.plan-details summary { cursor: pointer; color: var(--muted); font-weight: 650; }
+.plan-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 10px; }
+.plan-fields label { margin: 0; }
+.plan-fields input { width: 100%; }
+.plan-check { display:flex; flex-wrap:wrap; gap:7px; margin-top:12px; padding-top:10px; border-top:1px solid var(--line); font-size:10px; }
+.plan-check b { width:100%; }
+.plan-check span { background:#f1ece4; border-radius:999px; padding:4px 8px; }
+.plan-check p { width:100%; margin:2px 0 0; color:var(--muted); }
+.context-warning { color: #914b2e; background: #fff3e7; border-radius: 9px; padding: 10px; line-height: 1.55; }
+.field-hint { display: block; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.memory-pin { border: 0; background: transparent; color: var(--gold); font-size: 10px; padding: 3px 0; }
+@media (max-width: 760px) { .plan-fields { grid-template-columns: 1fr; } }

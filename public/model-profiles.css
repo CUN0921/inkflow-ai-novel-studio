@@ -1,0 +1,22 @@
+.model-profiles {
+  display: grid;
+  gap: 7px;
+  margin: 13px 0;
+}
+
+.model-profile {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px;
+}
+
+.model-profile b { color: var(--ink); font-size: 11px; }
+.model-profile span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #5e5951; }
+.model-profile small { color: var(--sage); }
+.model-profile small.off { color: #a09588; }
+.model-profile .model-endpoint { grid-column: 2 / 4; color: #aaa198; font-size: 9px; }

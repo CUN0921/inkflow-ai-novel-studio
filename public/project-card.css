@@ -1,0 +1,4 @@
+.card-top-actions{display:flex;align-items:center;gap:8px}
+.project-delete{width:24px;height:24px;border:1px solid transparent;border-radius:50%;background:transparent;color:#9b948a;font-size:18px;line-height:20px;opacity:0;transition:.18s}
+.project-card:hover .project-delete,.project-delete:focus-visible{opacity:1}
+.project-delete:hover{border-color:#d6b8b0;background:#f5e8e4;color:var(--accent-dark)}

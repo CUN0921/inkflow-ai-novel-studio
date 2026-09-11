@@ -1,0 +1,9 @@
+#settingsDialog{width:760px;max-height:90vh;overflow:auto}
+.review-toggle{display:flex;align-items:center;gap:8px;font-weight:650}
+.model-setting{border:1px solid var(--line);border-radius:9px;margin:15px 0;padding:16px}
+.model-setting legend{padding:0 8px;font-size:13px;color:var(--accent)}
+.model-setting label{margin-top:9px}
+.model-setting .key-clear{display:flex;gap:8px;align-items:center}
+.field-hint{display:block;color:var(--muted);font-size:10px;margin-top:-3px}
+#settingsFeedback{white-space:pre-wrap;font-size:12px;line-height:1.8;color:var(--sage)}
+#settingsFeedback.error{color:var(--accent)}
