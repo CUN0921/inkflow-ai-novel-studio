@@ -29,7 +29,7 @@ export class SimilarityService {
     let webMatches = [];
     const checker = this.models.for('checker');
     if (!checker.enabled) throw new Error('网络查重模型尚未配置');
-    if (checker.protocol !== 'responses') throw new Error('网络查重需要把 AI_CHECKER_PROTOCOL 设置为 responses');
+    if (checker.protocol !== 'responses') throw new Error('请在“模型与审稿”中把网络查重协议设置为 Responses');
 
     const result = await checker.generate({
       instructions:'你是中文网文相似内容检索员。只报告搜索结果中有实际文本依据的匹配，不要仅凭题材、人物类型或常见表达判断相似。',

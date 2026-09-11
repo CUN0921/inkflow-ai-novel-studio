@@ -1,7 +1,7 @@
 import {createRequire} from 'node:module';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import http from 'node:http';
@@ -17,7 +17,10 @@ const mock=http.createServer(async(req,res)=>{
   res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'completed',output_text:text}));
 });
 await new Promise(r=>mock.listen(4343,'127.0.0.1',r));
-const env={...process.env,PORT:'4342',NOVEL_DB_PATH:join(dir,'test.db'),NOVEL_SETTINGS_PATH:join(dir,'settings.json'),OPENAI_API_KEY:'qa',OPENAI_MODEL:'qa',OPENAI_BASE_URL:'http://127.0.0.1:4343/responses',OPENAI_PROTOCOL:'responses'};
+const settingsPath=join(dir,'settings.json');
+const profile={apiKey:'qa',model:'qa',baseUrl:'http://127.0.0.1:4343/responses',protocol:'responses',outputTokens:8000,reasoningEffort:'none'};
+writeFileSync(settingsPath,JSON.stringify({reviewEnabled:true,profiles:{planner:profile,writer:profile,reviewer:profile,checker:profile}}));
+const env={...process.env,PORT:'4342',NOVEL_DB_PATH:join(dir,'test.db'),NOVEL_SETTINGS_PATH:settingsPath};
 let server,browser;async function stop(){if(server?.exitCode===null){server.kill();await once(server,'exit');}}
 try{
   server=spawn(process.execPath,['server.mjs'],{cwd:resolve('.'),env,windowsHide:true,stdio:'ignore'});

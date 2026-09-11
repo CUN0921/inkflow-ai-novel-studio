@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { readFileSync, existsSync, statSync, createReadStream, watchFile } from 'node:fs';
+import { readFileSync, existsSync, statSync, createReadStream } from 'node:fs';
 import { join, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NovelDatabase } from './src/database.mjs';
@@ -8,27 +8,20 @@ import { WritingEngine } from './src/writing-engine.mjs';
 import { SimilarityService } from './src/similarity-service.mjs';
 import { RewriteService } from './src/rewrite-service.mjs';
 import { chapterContext } from './src/chapter-context.mjs';
-import { readEnvFile, workspaceId, servicePort } from './src/runtime-config.mjs';
+import { workspaceId, servicePort } from './src/runtime-config.mjs';
 import { StudioSettings } from './src/studio-settings.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
-const envFile = join(root, '.env');
-const runtimeEnv = () => ({...readEnvFile(envFile), ...process.env});
-const initialEnv = runtimeEnv();
+const initialEnv = process.env;
 const db = new NovelDatabase(initialEnv.NOVEL_DB_PATH || join(root, 'data', 'novels.db'));
 db.seed();
-const settings = new StudioSettings(initialEnv.NOVEL_SETTINGS_PATH || join(dirname(initialEnv.NOVEL_DB_PATH || join(root, 'data', 'novels.db')), 'model-settings.json'), runtimeEnv);
+const settings = new StudioSettings(initialEnv.NOVEL_SETTINGS_PATH || join(dirname(initialEnv.NOVEL_DB_PATH || join(root, 'data', 'novels.db')), 'model-settings.json'), () => ({}));
 const models = new ModelRouter(settings.effectiveEnv(), {onEvent:event => db.addModelEvent(event)});
 const engine = new WritingEngine(db, models);
 const similarity = new SimilarityService(db, models);
 const rewrites = new RewriteService(db, models);
 for (const run of db.runningRuns()) engine.resume(run.id);
 const port = servicePort(initialEnv);
-watchFile(envFile, {interval:1000}, (current, previous) => {
-  if (current.mtimeMs === previous.mtimeMs) return;
-  const profiles = models.reload(settings.effectiveEnv());
-  console.log(`模型配置已自动重新加载：${profiles.filter(item => item.enabled).length}/${profiles.length} 个任务模型可用`);
-});
 
 const server = http.createServer(async (req, res) => {
   try {
