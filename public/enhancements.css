@@ -15,4 +15,33 @@
 .context-warning { color: #914b2e; background: #fff3e7; border-radius: 9px; padding: 10px; line-height: 1.55; }
 .field-hint { display: block; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .memory-pin { border: 0; background: transparent; color: var(--gold); font-size: 10px; padding: 3px 0; }
-@media (max-width: 760px) { .plan-fields { grid-template-columns: 1fr; } }
+[hidden] { display: none !important; }
+.short-story-guide { border-color: rgba(153, 105, 50, .38); background: linear-gradient(145deg, #fffdf9, #f8f0e4); }
+.short-guide-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+.short-guide-head h2 { margin: 4px 0 5px; font-family: var(--display); font-size: clamp(22px, 3vw, 34px); }
+.short-guide-head p { margin: 0; color: var(--muted); }
+.short-ready-pill { white-space: nowrap; border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; color: var(--muted); background: rgba(255,255,255,.65); font-size: 11px; font-weight: 700; }
+.short-ready-pill.ready { color: #286149; border-color: #99b9a8; background: #eff8f3; }
+.short-blueprint { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+.short-blueprint > div { border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; background: rgba(255,255,255,.58); }
+.short-blueprint b, .trial-card > b { font-size: 11px; color: var(--gold); }
+.short-blueprint p, .trial-card p { margin: 6px 0 0; line-height: 1.65; white-space: pre-wrap; }
+.short-check-grid { display: grid; grid-template-columns: minmax(240px,.85fr) minmax(300px,1.15fr); gap: 14px; margin-top: 14px; }
+.short-check-grid ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.short-check-grid li { display: flex; gap: 9px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; background: rgba(255,255,255,.58); }
+.short-check-grid li i { display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: #eee8de; color: var(--muted); font-style: normal; flex: 0 0 auto; }
+.short-check-grid li.ready i { color: #fff; background: #4d8068; }
+.short-check-grid li span { display: grid; gap: 2px; }
+.short-check-grid li small, .trial-card small { color: var(--muted); line-height: 1.5; }
+.trial-card { border-radius: 12px; padding: 14px 16px; background: #28241f; color: #fffaf0; }
+.trial-card > small { display: block; margin-top: 9px; color: #c9bdad; }
+.trial-card > div { margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.15); }
+.title-options { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 11px; }
+.title-options summary { cursor: pointer; color: var(--muted); font-size: 11px; font-weight: 700; }
+.title-options div { display: flex; flex-wrap: wrap; gap: 7px; padding-top: 10px; }
+.title-options span { border-radius: 999px; padding: 6px 10px; background: #eee6da; font-size: 11px; }
+@media (max-width: 760px) {
+  .plan-fields, .short-blueprint, .short-check-grid { grid-template-columns: 1fr; }
+  .short-guide-head { display: grid; gap: 10px; }
+  .short-ready-pill { justify-self: start; }
+}

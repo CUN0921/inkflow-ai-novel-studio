@@ -22,7 +22,7 @@ export class NovelDatabase {
         target_words INTEGER NOT NULL DEFAULT 300000, mode TEXT NOT NULL DEFAULT 'serial',
         status TEXT NOT NULL DEFAULT 'planning', outline TEXT NOT NULL DEFAULT '',
         world TEXT NOT NULL DEFAULT '', characters TEXT NOT NULL DEFAULT '[]', story_digest TEXT NOT NULL DEFAULT '',
-        current_chapter INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        current_chapter INTEGER NOT NULL DEFAULT 0, short_config TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS volumes (
         id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -104,7 +104,7 @@ export class NovelDatabase {
       );
     `);
     const additions = {
-      projects:{story_digest:"TEXT NOT NULL DEFAULT ''"},
+      projects:{story_digest:"TEXT NOT NULL DEFAULT ''",short_config:"TEXT NOT NULL DEFAULT '{}'"},
       chapters:{writing_instructions:"TEXT NOT NULL DEFAULT ''",target_words:'INTEGER NOT NULL DEFAULT 3000',opening_instructions:"TEXT NOT NULL DEFAULT ''",handoff:"TEXT NOT NULL DEFAULT '{}'",plan:"TEXT NOT NULL DEFAULT '{}'",plan_result:"TEXT NOT NULL DEFAULT '{}'",context_snapshot:"TEXT NOT NULL DEFAULT '{}'",revision:'INTEGER NOT NULL DEFAULT 1',context_stale:'INTEGER NOT NULL DEFAULT 0'},
       runs:{chapter_ids:"TEXT NOT NULL DEFAULT '[]'",task_type:"TEXT NOT NULL DEFAULT 'write'",options:"TEXT NOT NULL DEFAULT '{}'",active_chapter_id:'TEXT'},
       memories:{source_version:'INTEGER',importance:'INTEGER NOT NULL DEFAULT 1',pinned:'INTEGER NOT NULL DEFAULT 0',updated_at:"TEXT NOT NULL DEFAULT ''"},
@@ -137,9 +137,15 @@ export class NovelDatabase {
 
   createProject(input) {
     const id = randomUUID(), stamp = now();
-    this.run(`INSERT INTO projects(id,title,genre,premise,tone,target_words,mode,status,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?)`, id, input.title?.trim() || '未命名作品', input.genre || '', input.premise || '',
-      input.tone || '', Number(input.targetWords) || 300000, input.mode || 'serial', 'planning', stamp, stamp);
+    const mode = input.mode === 'short' ? 'short' : 'serial';
+    const targetWords = Number(input.targetWords) || (mode === 'short' ? 15000 : 300000);
+    if (!Number.isInteger(targetWords) || targetWords < (mode === 'short' ? 6000 : 10000) || targetWords > (mode === 'short' ? 80000 : 3000000)) {
+      throw new Error(mode === 'short' ? '短故事目标字数需在 6000 到 80000 之间' : '长篇目标字数需在 10000 到 3000000 之间');
+    }
+    const shortConfig = normalizeShortConfig({...(input.shortConfig || {}),perspective:input.perspective || input.shortConfig?.perspective});
+    this.run(`INSERT INTO projects(id,title,genre,premise,tone,target_words,mode,status,short_config,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)`, id, input.title?.trim() || '未命名作品', input.genre || '', input.premise || '',
+      input.tone || '', targetWords, mode, 'planning', JSON.stringify(shortConfig), stamp, stamp);
     return this.getProject(id);
   }
 
@@ -153,6 +159,8 @@ export class NovelDatabase {
     const project = this.get('SELECT * FROM projects WHERE id=?', id);
     if (!project) return null;
     project.characters = JSON.parse(project.characters || '[]');
+    try { project.short_config = normalizeShortConfig(JSON.parse(project.short_config || '{}')); }
+    catch { project.short_config = normalizeShortConfig(); }
     project.volumes = this.all('SELECT * FROM volumes WHERE project_id=? ORDER BY number', id);
     project.chapters = this.all('SELECT * FROM chapters WHERE project_id=? ORDER BY number', id).map(chapter => this.hydrateChapter(chapter));
     project.memories = this.all('SELECT * FROM memories WHERE project_id=? ORDER BY source_chapter DESC, created_at DESC', id);
@@ -165,11 +173,11 @@ export class NovelDatabase {
   }
 
   updateProject(id, input) {
-    const allowed = { title:'title', genre:'genre', premise:'premise', tone:'tone', targetWords:'target_words', mode:'mode', outline:'outline', world:'world', characters:'characters', status:'status' };
+    const allowed = { title:'title', genre:'genre', premise:'premise', tone:'tone', targetWords:'target_words', mode:'mode', shortConfig:'short_config', outline:'outline', world:'world', characters:'characters', status:'status' };
     const entries = Object.entries(input).filter(([key]) => allowed[key]);
     if (!entries.length) return this.getProject(id);
     const fields = entries.map(([key]) => `${allowed[key]}=?`);
-    const values = entries.map(([key,value]) => key === 'characters' ? JSON.stringify(value) : value);
+    const values = entries.map(([key,value]) => key === 'characters' ? JSON.stringify(value) : key === 'shortConfig' ? JSON.stringify(normalizeShortConfig(value)) : value);
     this.run(`UPDATE projects SET ${fields.join(',')}, updated_at=? WHERE id=?`, ...values, now(), id);
     return this.getProject(id);
   }
@@ -202,8 +210,8 @@ export class NovelDatabase {
         this.run('INSERT INTO volumes(id,project_id,number,title,goal,status) VALUES(?,?,?,?,?,?)', volumeId, projectId, volume.number, volume.title, volume.goal, 'planned');
         for (const chapter of volume.chapters || []) {
           const stamp = now();
-          this.run(`INSERT INTO chapters(id,project_id,volume_id,number,title,outline,plan,status,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?)`, randomUUID(), projectId, volumeId, chapter.number, chapter.title, chapter.outline, JSON.stringify(normalizeChapterPlan(chapter.plan)), 'planned', stamp, stamp);
+          this.run(`INSERT INTO chapters(id,project_id,volume_id,number,title,outline,plan,target_words,status,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)`, randomUUID(), projectId, volumeId, chapter.number, chapter.title, chapter.outline, JSON.stringify(normalizeChapterPlan(chapter.plan)), Number(chapter.targetWords) || 3000, 'planned', stamp, stamp);
         }
       }
       for (const item of plan.foreshadows || []) {
@@ -211,8 +219,10 @@ export class NovelDatabase {
           VALUES(?,?,?,?,?,?,?,?,?)`, randomUUID(), projectId, item.plantedChapter || 0, item.targetVolume || null,
           item.title, item.visibleClue || '', item.truth || '', 'planned', now());
       }
-      this.run(`UPDATE projects SET outline=?,world=?,characters=?,status='ready',updated_at=? WHERE id=?`,
-        plan.outline, plan.world, JSON.stringify((plan.characters || []).map(item => ({...item,firstChapter:item.firstChapter ?? 0,importance:item.importance || 'major',status:'active'}))), now(), projectId);
+      const current = this.get('SELECT short_config FROM projects WHERE id=?',projectId);
+      const shortConfig = plan.shortConfig ? normalizeShortConfig(plan.shortConfig) : normalizeShortConfig(JSON.parse(current?.short_config || '{}'));
+      this.run(`UPDATE projects SET outline=?,world=?,characters=?,short_config=?,status='ready',updated_at=? WHERE id=?`,
+        plan.outline, plan.world, JSON.stringify((plan.characters || []).map(item => ({...item,firstChapter:item.firstChapter ?? 0,importance:item.importance || 'major',status:'active'}))), JSON.stringify(shortConfig), now(), projectId);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');
@@ -223,6 +233,7 @@ export class NovelDatabase {
 
   planDemo(projectId) {
     const project = this.get('SELECT * FROM projects WHERE id=?', projectId);
+    if (project?.mode === 'short') return this.replacePlan(projectId, mockShortPlanFor({...project,short_config:normalizeShortConfig(JSON.parse(project.short_config || '{}'))}));
     const isSample = project?.title === '雾港来信';
     if (!isSample) return this.replacePlan(projectId, mockPlanFor(project));
     return this.replacePlan(projectId, {
@@ -295,7 +306,10 @@ export class NovelDatabase {
     if (!chapter) return null;
     if (input.expectedRevision !== undefined && input.expectedRevision !== chapter.revision) throw new Error('章节已被修改，请刷新后重试');
     const targetWords = input.targetWords === undefined ? chapter.target_words : Number(input.targetWords);
-    if (!Number.isInteger(targetWords) || targetWords < 500 || targetWords > 6000) throw new Error('单章目标字数需在 500 到 6000 之间');
+    const project = this.get('SELECT mode FROM projects WHERE id=?',chapter.project_id);
+    const minWords = project?.mode === 'short' ? 6000 : 500;
+    const maxWords = project?.mode === 'short' ? 80000 : 6000;
+    if (!Number.isInteger(targetWords) || targetWords < minWords || targetWords > maxWords) throw new Error(project?.mode === 'short' ? '短故事目标字数需在 6000 到 80000 之间' : '单章目标字数需在 500 到 6000 之间');
     const normalizedPlan = input.plan === undefined ? chapter.plan : normalizeChapterPlan(input.plan);
     const changed = ['title','outline','content'].some(key => input[key] !== undefined && input[key] !== chapter[key])
       || (input.plan !== undefined && JSON.stringify(normalizedPlan) !== JSON.stringify(chapter.plan || {}))
@@ -615,6 +629,62 @@ function normalizeChapterPlan(value={}) {
     turn:text('turn'),
     mustHappen:text('mustHappen'),
     endingState:text('endingState')
+  };
+}
+
+export function normalizeShortConfig(value={}) {
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const perspective = ['first','third'].includes(input.perspective) ? input.perspective : 'first';
+  const titleOptions = Array.isArray(input.titleOptions) ? input.titleOptions.map(String).map(item=>item.trim()).filter(Boolean).slice(0,6) : [];
+  const reversals = Array.isArray(input.reversals) ? input.reversals.map(String).map(item=>item.trim()).filter(Boolean).slice(0,6) : [];
+  return {
+    perspective,
+    recommendedTitle:String(input.recommendedTitle || '').trim(),
+    titleOptions,
+    category:String(input.category || '').trim(),
+    hook:String(input.hook || '').trim(),
+    coreConflict:String(input.coreConflict || '').trim(),
+    emotionalArc:String(input.emotionalArc || '').trim(),
+    reversals,
+    climax:String(input.climax || '').trim(),
+    ending:String(input.ending || '').trim(),
+    trialHook:String(input.trialHook || '').trim()
+  };
+}
+
+function mockShortPlanFor(project) {
+  const title = project?.title || '未命名短故事';
+  const premise = project?.premise || '主人公必须在有限时间里完成一次无法回避的选择。';
+  const genre = project?.genre || '现实情感';
+  const perspective = project?.short_config?.perspective || 'first';
+  const shortConfig = normalizeShortConfig({
+    perspective,
+    recommendedTitle:title,
+    titleOptions:[title,`我在真相揭开前失去了最重要的人`,`那封信抵达后的第七天`],
+    category:genre,
+    hook:'开篇直接呈现异常事件和主人公即将失去的东西，在前三段建立核心悬念。',
+    coreConflict:premise,
+    emotionalArc:'从压抑和怀疑进入希望，再经背叛跌至低谷，最终用主动选择完成情绪释放。',
+    reversals:['主人公信任的解释被关键证据推翻','看似帮助主人公的人其实隐瞒了真正目的','最终选择揭示主人公早已付出的代价'],
+    climax:'核心秘密、人物关系和现实代价在同一场行动中爆发，主人公必须立即选择。',
+    ending:'解决核心冲突并回应开篇意象，让人物选择产生清晰且不可逆的结果。',
+    trialHook:'在第一次重大反转之后切断试读，让读者明确知道更大的秘密即将揭开。'
+  });
+  const outline = `《${title}》围绕“${premise}”展开。开篇立即抛出异常与损失，中段用连续升级的阻碍和三次有效反转改变读者判断，在高潮中迫使主人公完成不可撤回的选择，结尾回收核心悬念与情绪承诺。`;
+  return {
+    outline,
+    world:`故事只保留推动“${genre}”核心冲突所需的背景规则。所有设定都必须通过行动显现，不使用大段说明。`,
+    characters:[
+      {name:'林默',role:'第一叙事者',desire:'阻止眼前的失去并弄清真相',conflict:'越接近真相，越需要承认自己的责任'},
+      {name:'苏遥',role:'关键关系人物',desire:'迫使主人公面对被掩盖的选择',conflict:'既想保护主人公，又必须揭开会伤害双方的事实'},
+      {name:'周先生',role:'对立力量',desire:'让秘密永远停留在过去',conflict:'他的阻止行为来自一项可以理解却不能接受的代价'}
+    ],
+    volumes:[{number:1,title:'完整故事',goal:'在一篇正文内完成悬念、反转、高潮与情绪闭环',chapters:[{
+      number:1,title:'完整故事',targetWords:Number(project.target_words) || 15000,outline,
+      plan:{openingState:'异常正在发生，主人公立即面临具体损失',cast:['林默','苏遥','周先生'],goal:'追查真相并阻止损失',turn:'关键证据推翻主人公对事件和关系的理解',mustHappen:'至少两次递进反转；高潮中完成不可撤回的选择',endingState:'核心冲突解决，开篇悬念与情绪承诺得到回收'}
+    }]}],
+    foreshadows:[],
+    shortConfig
   };
 }
 

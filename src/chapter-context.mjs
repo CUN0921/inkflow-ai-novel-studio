@@ -90,7 +90,7 @@ export function chapterContext(project, chapter) {
   } : null;
   const summarize = item => ({id:item.id,number:item.number,version:item.version,summary:item.summary});
   return {
-    project:{id:project.id,premise:project.premise,tone:project.tone,outline:project.outline,world:project.world,storyDigest:volumeDigest || project.story_digest || '',
+    project:{id:project.id,mode:project.mode,shortConfig:project.short_config || {},premise:project.premise,tone:project.tone,outline:project.outline,world:project.world,storyDigest:volumeDigest || project.story_digest || '',
       characters:(project.characters || []).filter(item => item.status !== 'needs_review' && (!item.firstChapter || item.firstChapter < chapter.number))},
     chapter:{id:chapter.id,number:chapter.number,title:chapter.title,outline:chapter.outline,plan:chapter.plan || {},writing_instructions:chapter.writing_instructions || '',opening_instructions:chapter.opening_instructions || '',target_words:chapter.target_words || 3000,version:chapter.version,revision:chapter.revision,content:chapter.content || ''},
     volumeGoal:project.volumes.find(item => item.id === chapter.volume_id)?.goal || '未设定',

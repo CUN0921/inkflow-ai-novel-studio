@@ -32,12 +32,15 @@ export class RewriteService {
     const snapshot = job.context_snapshot?.chapter ? job.context_snapshot : chapterContext(project, chapter);
     const context = writerContext(snapshot);
     const reviewEnabled = this.models.reviewEnabled !== false;
-    this.db.updateRewriteJob(jobId, {message:`正在重写第 ${chapter.number} 章《${chapter.title}》`});
+    const shortStory = project.mode === 'short';
+    this.db.updateRewriteJob(jobId, {message:shortStory ? '正在重写完整短故事' : `正在重写第 ${chapter.number} 章《${chapter.title}》`});
     let draft;
     try {
       draft = await writer.generate({
-      instructions:`你是职业中文长篇小说作者。文风要求：${snapshot.project.tone || '叙事清晰，场景具体'}。依据本章之前的事实和用户章纲重写，采用新的场景组织、表达和对话。原稿若与用户要求冲突，以用户要求为准。作者计划不得直接变成人物已知信息。`,
-      input:`${context}\n\n用户对本次重写的要求：${job.instruction || '改善节奏、场景表现和章节钩子，保留本章核心剧情作用。'}\n\n原章节正文：\n${snapshot.chapter.content}\n\n请直接返回完整重写正文，约${snapshot.chapter.target_words}字，不要标题、解释或修改说明。`,
+      instructions:shortStory
+        ? `你是职业中文短故事作者。文风要求：${snapshot.project.tone || '叙事清晰、节奏紧凑、情绪有层次'}。把原稿重写为一篇独立完结的完整故事，强化开篇钩子、核心冲突、递进反转、高潮和结局闭环，保持既定叙事视角。原稿与用户要求冲突时以用户要求为准。`
+        : `你是职业中文长篇小说作者。文风要求：${snapshot.project.tone || '叙事清晰，场景具体'}。依据本章之前的事实和用户章纲重写，采用新的场景组织、表达和对话。原稿若与用户要求冲突，以用户要求为准。作者计划不得直接变成人物已知信息。`,
+      input:`${context}\n\n用户对本次重写的要求：${job.instruction || (shortStory ? '改善开篇吸引力、冲突递进、情绪张力和结局回收。' : '改善节奏、场景表现和章节钩子，保留本章核心剧情作用。')}\n\n原${shortStory ? '短故事' : '章节'}正文：\n${snapshot.chapter.content}\n\n请直接返回完整重写正文，约${snapshot.chapter.target_words}字，不要标题、解释或修改说明。`,
       maxOutputTokens:this.models.outputTokens?.('writer', 24000) ?? 24000,
       streamProgress:true,
       meta:{task:'rewrite',projectId:project.id,chapterId:chapter.id,jobId}
@@ -69,7 +72,7 @@ export class RewriteService {
     try {
       if (!reviewer.enabled) throw new Error('审稿整理模型尚未配置');
       const checked = await reviewer.generate({
-        instructions:'你是长篇小说责任编辑。简洁检查候选稿是否完成章纲、遵守既有事实、没有提前泄露未来剧情，并提取最终确定的故事记忆。不要复述或重写正文。',
+        instructions:shortStory ? '你是中文短故事责任编辑。检查候选稿是否在一篇内完成核心冲突、递进反转、高潮和情绪闭环，开篇是否快速进入事件，叙事视角是否统一，并提取最终事实。不要复述或重写正文。' : '你是长篇小说责任编辑。简洁检查候选稿是否完成章纲、遵守既有事实、没有提前泄露未来剧情，并提取最终确定的故事记忆。不要复述或重写正文。',
         input:`${context}\n\n${reviewerContinuity(snapshot)}\n\n用户重写要求：${job.instruction}\n\n重写候选稿：\n${draft.text}\n\n${rewriteReviewRequest()}`,
         maxOutputTokens:this.models.outputTokens?.('reviewer', 6000) ?? 6000,
         validate:text => validateRewriteReview(parseJsonText(text)),

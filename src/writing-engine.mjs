@@ -13,6 +13,7 @@ export class WritingEngine {
   async createPlan(projectId) {
     const project = this.db.getProject(projectId);
     if (!project) throw new Error('作品不存在');
+    if (project.mode === 'short') return this.createShortStoryPlan(project);
     const ai = this.models.for('planner');
     if (!ai.enabled) return this.db.planDemo(projectId);
 
@@ -37,9 +38,24 @@ export class WritingEngine {
     return this.db.replacePlan(projectId, plan);
   }
 
+  async createShortStoryPlan(project) {
+    const ai = this.models.for('planner');
+    if (!ai.enabled) return this.db.planDemo(project.id);
+    const perspective = project.short_config?.perspective === 'third' ? '第三人称限知' : '第一人称';
+    const result = await ai.generate({
+      instructions:'你是中文短故事主编。设计一篇一次完结、可以直接写成全文的故事，不套用长篇分卷结构。开篇尽快建立异常、损失或冲突；情节持续升级，反转必须改变人物判断或处境；高潮同时兑现核心冲突和情绪压力；结尾回收悬念并完成情绪闭环。',
+      input:`标题：${project.title}\n题材：${project.genre}\n核心创意：${project.premise}\n文风：${project.tone}\n目标字数：${project.target_words}\n叙事视角：${perspective}\n\n番茄短故事边界：全文6000–80000字，10000–30000字最佳，一篇文章完结，节奏紧凑、剧情起伏明显、情绪张力强。请只返回 JSON：{"outline":"完整故事主线","world":"只保留本故事必要的背景规则","characters":[{"name":"","role":"","desire":"","conflict":""}],"storyOutline":"可以直接写作的完整剧情，包含开篇、升级、至少两次有效反转、高潮和结局","plan":{"openingState":"开篇立即发生的事件","cast":["人物"],"goal":"核心行动目标","turn":"最大认知或处境反转","mustHappen":"必须兑现的冲突、反转和高潮","endingState":"最终结果与情绪余韵"},"shortStory":{"recommendedTitle":"推荐标题","titleOptions":["备选标题"],"category":"准确分类","perspective":"first或third","hook":"前三段钩子","coreConflict":"核心冲突","emotionalArc":"情绪曲线","reversals":["递进反转"],"climax":"高潮设计","ending":"结局闭环","trialHook":"适合在试读结束前形成解锁期待的情节点"}}。人物控制在2–5个，反转2–4次，不得把未解决悬念留给续集。`,
+      maxOutputTokens:this.models.outputTokens?.('planner',8000) ?? 8000,
+      validate:text=>validateShortStoryPlan(parseJsonText(text),project),
+      meta:{task:'short-plan',projectId:project.id}
+    });
+    return this.db.replacePlan(project.id,result.value ?? validateShortStoryPlan(parseJsonText(result.text),project));
+  }
+
   async extendPlan(projectId, options={}) {
     const project = this.db.getProject(projectId);
     if (!project) throw new Error('作品不存在');
+    if (project.mode === 'short') throw new Error('短故事是一篇完结的完整稿件，不使用扩展章纲');
     const nextNumber = Math.max(0, ...project.chapters.map(ch => ch.number)) + 1;
     const desiredVolume = Math.min(project.volumes.length, Math.floor((nextNumber - 1) / 30) + 1);
     const volume = options.volumeNumber !== undefined ? project.volumes.find(v => v.number === Number(options.volumeNumber))
@@ -242,7 +258,8 @@ export class WritingEngine {
         if (issue.severity === 'critical') this.db.addIssue(project.id, { ...issue, chapterNumber:chapter.number });
       }
       if (!critical) completed++;
-      this.db.run('UPDATE projects SET current_chapter=MAX(current_chapter,?),status=?,updated_at=? WHERE id=?', chapter.number, 'writing', new Date().toISOString(), project.id);
+      const projectStatus = project.mode === 'short' && !critical ? 'completed' : 'writing';
+      this.db.run('UPDATE projects SET current_chapter=MAX(current_chapter,?),status=?,updated_at=? WHERE id=?', chapter.number, projectStatus, new Date().toISOString(), project.id);
       this.db.updateRun(runId, { completedChapters:completed, currentStep:critical ? 'needs-attention' : 'saved',
         message:critical ? `第 ${chapter.number} 章仍有严重一致性问题` : `第 ${chapter.number} 章已保存，故事资料已更新` });
       this.db.db.exec('COMMIT');
@@ -275,7 +292,8 @@ export class WritingEngine {
       this.db.mergeCharacters(project.id,review.characters,chapter.number);
       this.db.updateForeshadows(project.id,review.foreshadows,chapter.number);
       for (const issue of review.issues) if (issue.severity === 'critical') this.db.addIssue(project.id,{...issue,chapterNumber:chapter.number});
-      this.db.run('UPDATE projects SET current_chapter=MAX(current_chapter,?),status=?,updated_at=? WHERE id=?',chapter.number,'writing',new Date().toISOString(),project.id);
+      const projectStatus = project.mode === 'short' && !critical ? 'completed' : 'writing';
+      this.db.run('UPDATE projects SET current_chapter=MAX(current_chapter,?),status=?,updated_at=? WHERE id=?',chapter.number,projectStatus,new Date().toISOString(),project.id);
       this.db.updateRun(runId,{completedChapters:completed,currentStep:'saved',message:`第 ${chapter.number} 章已保存，故事记忆已更新`});
       this.db.db.exec('COMMIT');
     } catch(error) { this.db.db.exec('ROLLBACK'); throw error; }
@@ -289,9 +307,13 @@ export class WritingEngine {
   async writeChapter(project, chapter, runId=null) {
     const ai = this.models.for('writer');
     if (!ai.enabled) return mockChapter(project, chapter);
+    const shortStory = project.mode === 'short';
+    const perspective = project.short_config?.perspective === 'third' ? '第三人称限知' : '第一人称';
       const result = await ai.generate({
-      instructions: `你是职业中文小说作者。写作风格：${project.tone || '叙事清晰，场景具体'}。严格依据已发生事实，不把未来计划写成过去。正文要有场景、动作、对话、感官细节与章节钩子。`,
-      input: `${this.buildContext(project, chapter)}\n\n请按用户章纲和单章要求直接写本章正文，约${chapter.target_words || 3000}字，不要解释，不要标题。`,
+      instructions: shortStory
+        ? `你是职业中文短故事作者。使用${perspective}，文风要求：${project.tone || '叙事清晰、节奏紧凑、情绪有层次'}。全文必须在一篇内完结：开篇前三段进入事件，围绕一个核心冲突持续升级，用2–4次有效反转改变人物处境，在高潮兑现最大压力，结尾回收核心悬念并完成情绪闭环。避免背景堆砌、重复冲突、无关作者话语和续集式悬而不决。`
+        : `你是职业中文小说作者。写作风格：${project.tone || '叙事清晰，场景具体'}。严格依据已发生事实，不把未来计划写成过去。正文要有场景、动作、对话、感官细节与章节钩子。`,
+      input: `${this.buildContext(project, chapter)}\n\n${shortStory ? `短故事专项规划：${JSON.stringify(project.short_config || {})}\n\n请直接写完整短故事正文，目标约${chapter.target_words || project.target_words || 15000}字。正文可以使用自然分段和少量文内分隔，但不要输出创作说明、JSON或“第X章”标题。` : `请按用户章纲和单章要求直接写本章正文，约${chapter.target_words || 3000}字，不要解释，不要标题。`}`,
       maxOutputTokens: this.models.outputTokens?.('writer', 24000) ?? 24000,
       streamProgress:true,
       meta:{task:'write',projectId:project.id,chapterId:chapter.id,runId:runId || project.latest_run?.id}
@@ -303,9 +325,10 @@ export class WritingEngine {
     const ai = this.models.for('writer');
     if (!ai.enabled) return mockChapter(project,chapter).content;
     const remaining = Math.max(500,(chapter.target_words || 3000) - Number(chapter.word_count || 0));
+    const shortStory = project.mode === 'short';
     const result = await ai.generate({
-      instructions:'你是职业中文小说作者。续写必须紧接已有草稿最后一句，保持视角、语气、人物状态和场景连续，不重复前文。',
-      input:`${this.buildContext(project,chapter)}\n\n已有草稿：\n${chapter.content}\n\n请从最后一句之后继续写约${remaining}字，完成本章章纲和结尾钩子。只返回新增正文，不要重复已有草稿，不要解释。`,
+      instructions:shortStory ? '你是中文短故事作者。续写必须紧接草稿最后一句，保持叙事视角、语气、人物状态和场景连续，不复述前文；继续升级核心冲突，并在本篇内完成高潮、真相回收和情绪闭环。' : '你是职业中文小说作者。续写必须紧接已有草稿最后一句，保持视角、语气、人物状态和场景连续，不重复前文。',
+      input:`${this.buildContext(project,chapter)}\n\n已有草稿：\n${chapter.content}\n\n请从最后一句之后继续写约${remaining}字，${shortStory ? '完成整篇短故事，不要留下依赖续集解决的核心悬念' : '完成本章章纲和结尾钩子'}。只返回新增正文，不要重复已有草稿，不要解释。`,
       maxOutputTokens:this.models.outputTokens?.('writer',24000) ?? 24000,
       streamProgress:true,
       meta:{task:'continue',projectId:project.id,chapterId:chapter.id,runId}
@@ -317,8 +340,8 @@ export class WritingEngine {
     const ai = this.models.for('reviewer');
     if (!ai.enabled) return mockReview(project, chapter, content);
     const result = await ai.generate({
-      instructions: '你是长篇小说责任编辑。检查设定一致性、时间线、人物知识边界、场景推进、重复与拖沓。只在确有必要时修订正文。',
-      input: `${this.buildContext(project, chapter)}\n\n待检查正文：\n${content}\n\n只返回 JSON：{"score":0到100,"summary":"100字内事实摘要","revisedContent":"若需修改则返回完整修订正文，否则空字符串","planCheck":{"goal":"done|partial|missing","turn":"done|partial|missing","mustHappen":"done|partial|missing","endingState":"done|partial|missing","note":"简短说明"},"memories":[{"kind":"character|event|item|knowledge|relationship|timeline","subject":"主体","fact":"确定事实","importance":1}],"characters":[{"name":"人物","role":"身份","aliases":[],"relationship":"当前关系","goal":"当前目标","location":"结尾位置","state":"结尾状态","importance":"major|minor"}],"foreshadows":[{"title":"线索名","status":"planted|advanced|resolved","evidence":"本章实际进展"}],"issues":[{"severity":"notice|critical","category":"continuity|pacing|character|timeline","message":"问题"}],"handoff":{"location":"结尾地点","time":"结尾时间","characterStates":[],"lastAction":"最后动作","emotionalState":"结尾情绪","newKnowledge":[],"carriedItems":[],"unresolved":[],"nextOpening":"下一章承接点","lastLine":"正文最后一句"}}。先在 revisedContent 中修正能够安全修正的问题；critical 只保留修订后仍会导致后文错误的问题。所有资料只依据最终正文，不得记录未来计划。`,
+      instructions: project.mode === 'short' ? '你是中文短故事责任编辑。检查开篇是否迅速进入事件、核心冲突是否集中、反转是否真正改变处境、情绪是否递进、视角是否统一、高潮和结局是否闭环，以及是否存在重复、无关内容或不规范分段。只在确有必要时修订正文。' : '你是长篇小说责任编辑。检查设定一致性、时间线、人物知识边界、场景推进、重复与拖沓。只在确有必要时修订正文。',
+      input: `${this.buildContext(project, chapter)}\n\n待检查正文：\n${content}\n\n只返回 JSON：{"score":0到100,"summary":"100字内事实摘要","revisedContent":"若需修改则返回完整修订正文，否则空字符串","planCheck":{"goal":"done|partial|missing","turn":"done|partial|missing","mustHappen":"done|partial|missing","endingState":"done|partial|missing","note":"简短说明"},"memories":[{"kind":"character|event|item|knowledge|relationship|timeline","subject":"主体","fact":"确定事实","importance":1}],"characters":[{"name":"人物","role":"身份","aliases":[],"relationship":"当前关系","goal":"当前目标","location":"结尾位置","state":"结尾状态","importance":"major|minor"}],"foreshadows":[{"title":"线索名","status":"planted|advanced|resolved","evidence":"本章实际进展"}],"issues":[{"severity":"notice|critical","category":"continuity|pacing|character|timeline","message":"问题"}],"handoff":{"location":"结尾地点","time":"结尾时间","characterStates":[],"lastAction":"最后动作","emotionalState":"结尾情绪","newKnowledge":[],"carriedItems":[],"unresolved":[],"nextOpening":"下一章承接点","lastLine":"正文最后一句"}}。先在 revisedContent 中修正能够安全修正的问题；critical 只保留修订后仍会导致后文错误的问题。所有资料只依据最终正文，不得记录未来计划。${project.mode === 'short' ? ' 短故事的核心冲突、关键反转、高潮或结局仍未完成时必须标记 critical。' : ''}`,
       maxOutputTokens: this.models.outputTokens?.('reviewer', 6000) ?? 6000,
       validate:text => validateReview(parseJsonText(text)),
       meta:{task:'review',projectId:project.id,chapterId:chapter.id}
@@ -338,6 +361,28 @@ export class WritingEngine {
     });
     return result.value ?? validateExtraction(parseJsonText(result.text));
   }
+}
+
+function validateShortStoryPlan(value,project) {
+  if (!value || typeof value.outline !== 'string' || !value.outline.trim() || typeof value.world !== 'string' || !value.world.trim()) throw new Error('短故事主线或必要背景缺失');
+  if (!Array.isArray(value.characters) || value.characters.length < 2 || value.characters.length > 5 || value.characters.some(item=>!item?.name || !item?.role)) throw new Error('短故事需要 2 到 5 个完整人物设定');
+  if (typeof value.storyOutline !== 'string' || !value.storyOutline.trim() || !value.plan || typeof value.plan !== 'object') throw new Error('短故事完整剧情或结构计划缺失');
+  const short = value.shortStory;
+  if (!short || typeof short !== 'object' || !short.recommendedTitle || !short.hook || !short.coreConflict || !short.emotionalArc || !short.climax || !short.ending) throw new Error('短故事钩子、冲突、情绪、高潮或结局规划不完整');
+  if (!Array.isArray(short.reversals) || short.reversals.length < 2) throw new Error('短故事至少需要两个递进反转');
+  const perspective = project.short_config?.perspective === 'third' ? 'third' : 'first';
+  return {
+    outline:value.outline.trim(), world:value.world.trim(), characters:value.characters,
+    volumes:[{number:1,title:'完整故事',goal:String(short.coreConflict),chapters:[{
+      number:1,title:'完整故事',outline:value.storyOutline.trim(),targetWords:Number(project.target_words) || 15000,plan:value.plan
+    }]}],
+    foreshadows:[],
+    shortConfig:{
+      perspective,recommendedTitle:String(short.recommendedTitle),titleOptions:Array.isArray(short.titleOptions) ? short.titleOptions : [],
+      category:String(short.category || project.genre || ''),hook:String(short.hook),coreConflict:String(short.coreConflict),
+      emotionalArc:String(short.emotionalArc),reversals:short.reversals,climax:String(short.climax),ending:String(short.ending),trialHook:String(short.trialHook || '')
+    }
+  };
 }
 
 function validateFoundation(value) {

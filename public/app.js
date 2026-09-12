@@ -26,13 +26,14 @@ async function init() {
 }
 
 function bindEvents() {
-  $('#newProjectBtn').onclick = $('#heroNewBtn').onclick = () => $('#newProjectDialog').showModal();
+  $('#newProjectBtn').onclick = $('#heroNewBtn').onclick = () => { configureProjectMode(); $('#newProjectDialog').showModal(); };
   $('#settingsBtn').onclick = openSettings;
   $('#settingsForm').onsubmit = saveSettings;
   $('#testModelsBtn').onclick = testModels;
   $$('.close-dialog').forEach(btn => btn.onclick = () => btn.closest('dialog').close());
   $$('.nav-item').forEach(btn => btn.onclick = () => showView(btn.dataset.view));
   $('#newProjectForm').onsubmit = createProject;
+  $('#projectMode').onchange = configureProjectMode;
   $('#planBtn').onclick = createPlan;
   $('#writeBtn').onclick = openWriteDialog;
   $('#writeForm').onsubmit = startWriting;
@@ -83,6 +84,18 @@ async function openSettings() {
   } catch (error) { $('#settingsFeedback').textContent = error.message; }
 }
 
+function configureProjectMode() {
+  const shortStory = $('#projectMode').value === 'short';
+  const target = $('#projectTargetWords');
+  const current = target.value;
+  target.innerHTML = shortStory
+    ? '<option value="10000">1 万字</option><option value="15000" selected>1.5 万字 · 推荐</option><option value="20000">2 万字</option><option value="30000">3 万字</option><option value="50000">5 万字</option><option value="80000">8 万字</option>'
+    : '<option value="300000">30 万字</option><option value="500000">50 万字</option><option value="1000000">100 万字</option>';
+  if ([...target.options].some(option=>option.value===current)) target.value=current;
+  $('#perspectiveField').hidden = !shortStory;
+  $('#newProjectForm [type=submit]').textContent = shortStory ? '创建并规划短故事' : '创建并规划';
+}
+
 async function saveSettings(event) {
   event.preventDefault();
   const btn = $('#saveSettingsBtn');
@@ -130,7 +143,8 @@ function renderDashboard() {
   const colors = ['#895044','#536d66','#746176','#8d7956'];
   $('#projectGrid').innerHTML = state.dashboard.projects.map((p,index) => {
     const pct = Math.min(100, Math.round(Number(p.written_words) / p.target_words * 100));
-    return `<article class="project-card" data-project="${p.id}"><div class="card-top"><div class="book-mark" style="--book:${colors[index%colors.length]}">卷</div><div class="card-top-actions"><span class="status-pill ${p.status}">${statusText(p.status)}</span><button class="project-delete" type="button" data-delete-project="${p.id}" title="删除作品" aria-label="删除《${escapeHtml(p.title)}》">×</button></div></div><h3>${escapeHtml(p.title)}</h3><span class="genre">${escapeHtml(p.genre || '未设定题材')}</span><p>${escapeHtml(p.premise || '等待写下故事的核心创意。')}</p><div class="card-progress"><div class="mini-progress"><i style="width:${pct}%"></i></div><div><span>${fmt(p.written_words)} / ${fmt(p.target_words)} 字</span><span>${pct}%</span></div></div></article>`;
+    const shortStory = p.mode === 'short';
+    return `<article class="project-card" data-project="${p.id}"><div class="card-top"><div class="book-mark" style="--book:${colors[index%colors.length]}">${shortStory?'短':'卷'}</div><div class="card-top-actions"><span class="status-pill ${p.status}">${shortStory?'短故事 · ':''}${statusText(p.status)}</span><button class="project-delete" type="button" data-delete-project="${p.id}" title="删除作品" aria-label="删除《${escapeHtml(p.title)}》">×</button></div></div><h3>${escapeHtml(p.title)}</h3><span class="genre">${escapeHtml(p.genre || '未设定题材')}</span><p>${escapeHtml(p.premise || '等待写下故事的核心创意。')}</p><div class="card-progress"><div class="mini-progress"><i style="width:${pct}%"></i></div><div><span>${fmt(p.written_words)} / ${fmt(p.target_words)} 字</span><span>${pct}%</span></div></div></article>`;
   }).join('') || '<div class="empty-state"><h3>还没有作品</h3><p>创建你的第一个故事吧。</p></div>';
   $$('.project-card').forEach(card => card.onclick = event => {
     if (event.target.closest('[data-delete-project]')) return;
@@ -158,18 +172,22 @@ async function openProject(id, preserveChapter=false) {
 
 function renderWorkspace() {
   const p = state.project;
+  const shortStory = p.mode === 'short';
   $('#projectTitle').textContent = p.title;
   $('#projectPremise').textContent = p.premise;
   renderProgress(p);
-  $('#planBtn').textContent = p.chapters.length ? '扩展近期章纲' : '生成创作方案';
+  $('#planBtn').hidden = shortStory && p.chapters.length > 0;
+  $('#planBtn').textContent = shortStory ? '生成短故事方案' : (p.chapters.length ? '扩展近期章纲' : '生成创作方案');
+  $('#writeBtn').textContent = shortStory ? '✦ 自动写完整故事' : '✦ 自动写作';
+  $('#workspaceTabs [data-tab="chapters"]').textContent = shortStory ? '全文与结构' : '章节与正文';
   setRunningUI(p.latest_run);
   renderChapters(); renderOutline(); renderFramework(); renderMemories(); renderIssues();
   renderModelMonitor(); loadModelEvents(); watchModelEvents();
   if (state.chapter && p.chapters.some(ch => ch.id === state.chapter.id)) selectChapter(state.chapter.id);
   else {
     state.chapter = null; state.context = null;
-    $('#editorPanel').innerHTML = '<div class="empty-state"><h3>选择一个章节</h3><p>生成创作方案后，在左侧选择章节。</p></div>';
-    $('#chapterContext').innerHTML = '<p class="muted">选择章节后显示本章参考资料。</p>';
+    $('#editorPanel').innerHTML = `<div class="empty-state"><h3>${shortStory?'选择完整稿件':'选择一个章节'}</h3><p>生成创作方案后，在左侧选择${shortStory?'稿件':'章节'}。</p></div>`;
+    $('#chapterContext').innerHTML = `<p class="muted">选择${shortStory?'稿件':'章节'}后显示创作参考资料。</p>`;
   }
 }
 
@@ -177,20 +195,22 @@ function renderProgress(project) {
   const target = Math.max(1, Number(project.target_words) || 1);
   const written = Math.max(0, Number(project.written_words) || 0);
   const pct = Math.min(100, written / target * 100);
-  $('#projectStatus').textContent = statusText(project.status);
+  const shortStory = project.mode === 'short';
+  $('#projectStatus').textContent = `${shortStory?'短故事 · ':''}${statusText(project.status)}`;
   $('#projectStatus').className = `status-pill ${project.status}`;
   $('#progressLabel').textContent = `${fmt(written)} / ${fmt(target)} 字`;
   $('#progressBar').style.width = `${pct}%`;
   const complete = project.chapters.filter(c => c.status === 'completed').length;
-  $('#chapterProgress').textContent = complete ? `已完成 ${complete} 章 · ${pct.toFixed(1)}%` : (written ? `已生成 ${fmt(written)} 字` : '尚未开始正文');
-  $('#chapterCount').textContent = `${project.chapters.length} 章`;
+  $('#chapterProgress').textContent = shortStory ? (complete ? `完整稿件已完成 · ${pct.toFixed(1)}%` : (written ? `已生成 ${fmt(written)} 字` : '尚未开始正文')) : (complete ? `已完成 ${complete} 章 · ${pct.toFixed(1)}%` : (written ? `已生成 ${fmt(written)} 字` : '尚未开始正文'));
+  $('#chapterCount').textContent = shortStory ? (project.chapters.length ? '1 篇' : '0 篇') : `${project.chapters.length} 章`;
 }
 
 function renderChapters() {
   const p = state.project;
+  const shortStory = p.mode === 'short';
   $('#volumeList').innerHTML = p.volumes.map(volume => {
     const chapters = p.chapters.filter(ch => ch.volume_id === volume.id);
-    return `<div class="volume-heading">第${volume.number}卷 · ${escapeHtml(volume.title)}</div>${chapters.length ? chapters.map(ch => `<button class="chapter-item ${state.chapter?.id===ch.id?'active':''}" data-chapter="${ch.id}"><b>${String(ch.number).padStart(2,'0')}</b><span>${escapeHtml(ch.title)}</span><i>${ch.status==='completed'?'●':ch.status==='draft'?'◐':'○'}</i></button>`).join('') : '<p class="muted" style="padding:0 14px 8px">等待滚动规划</p>'}`;
+    return `<div class="volume-heading">${shortStory?'一篇完结':`第${volume.number}卷 · ${escapeHtml(volume.title)}`}</div>${chapters.length ? chapters.map(ch => `<button class="chapter-item ${state.chapter?.id===ch.id?'active':''}" data-chapter="${ch.id}"><b>${shortStory?'全文':String(ch.number).padStart(2,'0')}</b><span>${escapeHtml(ch.title)}</span><i>${ch.status==='completed'?'●':ch.status==='draft'?'◐':'○'}</i></button>`).join('') : `<p class="muted" style="padding:0 14px 8px">${shortStory?'等待生成完整故事方案':'等待滚动规划'}</p>`}`;
   }).join('') || '<div class="empty-state" style="padding:90px 20px"><p>还没有章纲，先生成创作方案。</p></div>';
   $$('.chapter-item').forEach(btn => btn.onclick = () => selectChapter(btn.dataset.chapter));
 }
@@ -205,9 +225,13 @@ function selectChapter(id) {
   $$('.chapter-item').forEach(btn => btn.classList.toggle('active', btn.dataset.chapter === id));
   const ch = state.chapter;
   const plan = ch.plan || {};
+  const shortStory = state.project.mode === 'short';
   const writerBudget = state.health?.models?.find(item => item.role === 'writer')?.outputTokens || 24000;
   const chapterMeta = ch.status === 'draft' ? `第 ${ch.version} 版 · ${fmt(ch.word_count)} 字 · 待审稿` : ch.status==='completed' ? `第 ${ch.version} 版 · ${fmt(ch.word_count)} 字 · ${ch.review_score == null?'未审稿':`评分 ${ch.review_score}`}` : '等待创作';
-  $('#editorPanel').innerHTML = `<div class="editor-head"><input id="chapterTitleInput" value="${escapeHtml(ch.title)}" aria-label="章节标题"><span class="editor-meta">${chapterMeta}</span></div>${ch.status==='draft'?'<p class="draft-notice">草稿已经安全保存。可以续写到目标字数，或更新故事资料后继续后续章节。</p>':''}<div class="chapter-plan-editor"><label>本章章纲 · 可自由修改<textarea id="chapterOutline" rows="3" placeholder="本章的关键行动、转折和结尾钩子">${escapeHtml(ch.outline)}</textarea></label><label>本章写作要求<textarea id="chapterInstructions" rows="2" placeholder="视角、必写情节、禁止提前揭露的信息……">${escapeHtml(ch.writing_instructions)}</textarea></label><label>开篇衔接要求 · 可选<textarea id="chapterOpeningInstructions" rows="2" placeholder="留空时自动承接上一章的动作、地点和人物状态">${escapeHtml(ch.opening_instructions || '')}</textarea></label><details class="plan-details"><summary>详细章纲（可选）</summary><div class="plan-fields"><label>开场状态<input id="planOpeningState" value="${escapeHtml(plan.openingState || '')}" placeholder="地点、时间和人物状态"></label><label>出场人物<input id="planCast" value="${escapeHtml((plan.cast || []).join('、'))}" placeholder="用顿号分隔"></label><label>本章目标<input id="planGoal" value="${escapeHtml(plan.goal || '')}"></label><label>关键转折<input id="planTurn" value="${escapeHtml(plan.turn || '')}"></label><label>必须发生<input id="planMustHappen" value="${escapeHtml(plan.mustHappen || '')}"></label><label>结束状态<input id="planEndingState" value="${escapeHtml(plan.endingState || '')}"></label></div></details><label>目标字数 · AI 尽量遵循<input id="chapterTargetWords" type="number" min="500" max="6000" step="100" value="${ch.target_words || 3000}"><small class="field-hint">实际正文输出预算：${fmt(writerBudget)} token；截断时会保留部分正文。</small></label></div><textarea id="chapterContent" class="chapter-content" aria-label="章节正文" placeholder="可以在这里自行写作，也可以让 AI 按章纲完成。">${escapeHtml(ch.content)}</textarea><div class="editor-actions"><button class="ghost" id="writeCurrentChapterBtn" ${ch.content ? 'hidden' : ''}>✦ 自动写本章</button>${ch.status==='draft'?'<button class="ghost" id="continueDraftBtn">继续续写</button><button class="primary" id="reviewDraftBtn">更新故事资料</button>':ch.context_stale?'<button class="primary" id="reviewDraftBtn">重新整理资料</button>':''}<button class="ghost" id="rewriteChapterBtn">↻ 重写本章</button><button class="ghost" id="checkSimilarityBtn">⌕ 网络查重</button><button class="primary" id="saveChapterBtn">保存</button></div>`;
+  const structureName = shortStory ? '完整故事结构' : '本章章纲';
+  const openingName = shortStory ? '开篇钩子要求 · 可选' : '开篇衔接要求 · 可选';
+  const openingPlaceholder = shortStory ? '例如：前三段直接出现异常来信和即将发生的损失' : '留空时自动承接上一章的动作、地点和人物状态';
+  $('#editorPanel').innerHTML = `<div class="editor-head"><input id="chapterTitleInput" value="${escapeHtml(ch.title)}" aria-label="${shortStory?'稿件':'章节'}标题"><span class="editor-meta">${chapterMeta}</span></div>${ch.status==='draft'?`<p class="draft-notice">草稿已经安全保存。可以续写到目标字数，或${shortStory?'完成全文检查':'更新故事资料后继续后续章节'}。</p>`:''}<div class="chapter-plan-editor"><label>${structureName} · 可自由修改<textarea id="chapterOutline" rows="3" placeholder="${shortStory?'开篇、冲突升级、递进反转、高潮和结局':'本章的关键行动、转折和结尾钩子'}">${escapeHtml(ch.outline)}</textarea></label><label>${shortStory?'全文':'本章'}写作要求<textarea id="chapterInstructions" rows="2" placeholder="视角、必写情节、禁止出现的内容……">${escapeHtml(ch.writing_instructions)}</textarea></label><label>${openingName}<textarea id="chapterOpeningInstructions" rows="2" placeholder="${openingPlaceholder}">${escapeHtml(ch.opening_instructions || '')}</textarea></label><details class="plan-details"><summary>详细结构（可选）</summary><div class="plan-fields"><label>开场状态<input id="planOpeningState" value="${escapeHtml(plan.openingState || '')}" placeholder="地点、时间和人物状态"></label><label>出场人物<input id="planCast" value="${escapeHtml((plan.cast || []).join('、'))}" placeholder="用顿号分隔"></label><label>${shortStory?'核心目标':'本章目标'}<input id="planGoal" value="${escapeHtml(plan.goal || '')}"></label><label>关键反转<input id="planTurn" value="${escapeHtml(plan.turn || '')}"></label><label>必须发生<input id="planMustHappen" value="${escapeHtml(plan.mustHappen || '')}"></label><label>${shortStory?'结局状态':'结束状态'}<input id="planEndingState" value="${escapeHtml(plan.endingState || '')}"></label></div></details><label>目标字数 · AI 尽量遵循<input id="chapterTargetWords" type="number" min="${shortStory?6000:500}" max="${shortStory?80000:6000}" step="100" value="${ch.target_words || (shortStory?state.project.target_words:3000)}"><small class="field-hint">${shortStory?'番茄短故事要求 6,000–80,000 字，10,000–30,000 字最佳。':''}实际正文输出预算：${fmt(writerBudget)} token；截断时会保留部分正文。</small></label></div><textarea id="chapterContent" class="chapter-content" aria-label="${shortStory?'短故事':'章节'}正文" placeholder="可以在这里自行写作，也可以让 AI 按结构完成。">${escapeHtml(ch.content)}</textarea><div class="editor-actions"><button class="ghost" id="writeCurrentChapterBtn" ${ch.content ? 'hidden' : ''}>✦ ${shortStory?'自动写完整故事':'自动写本章'}</button>${ch.status==='draft'?`<button class="ghost" id="continueDraftBtn">继续续写</button><button class="primary" id="reviewDraftBtn">${shortStory?'检查完整故事':'更新故事资料'}</button>`:ch.context_stale?'<button class="primary" id="reviewDraftBtn">重新整理资料</button>':''}<button class="ghost" id="rewriteChapterBtn">↻ ${shortStory?'重写故事':'重写本章'}</button><button class="ghost" id="checkSimilarityBtn">⌕ 网络查重</button><button class="primary" id="saveChapterBtn">保存</button></div>`;
   const planCheck=ch.plan_result || {};
   if (Object.keys(planCheck).length && $('.plan-details')) {
     const stateLabel=value=>({done:'已完成',partial:'部分完成',missing:'未完成'}[value] || '待检查');
@@ -245,14 +269,41 @@ function renderContext(ch) {
 
 function renderOutline() {
   const p = state.project;
-  $('#outlineText').textContent = p.outline || '还没有全书主线。生成创作方案后会显示在这里。';
-  $('#worldText').textContent = p.world || '还没有世界规则。';
+  const shortStory = p.mode === 'short';
+  $('#outlineLabel').textContent = shortStory ? '完整故事主线' : '全书主线';
+  $('#worldLabel').textContent = shortStory ? '必要背景规则' : '世界规则';
+  $('#outlineText').textContent = p.outline || `还没有${shortStory?'完整故事':'全书'}主线。生成创作方案后会显示在这里。`;
+  $('#worldText').textContent = p.world || (shortStory ? '只保留推动核心冲突所需的背景。' : '还没有世界规则。');
   $('#characterCards').innerHTML = p.characters.map(c => `<div class="character-card"><strong>${escapeHtml(c.name)}</strong><span>${escapeHtml(c.role)}</span><p>${c.desire?`<b>目标：</b>${escapeHtml(c.desire)}<br>`:''}${c.conflict?`<b>矛盾：</b>${escapeHtml(c.conflict)}<br>`:''}${c.relationship?`<b>关系：</b>${escapeHtml(c.relationship)}<br>`:''}${c.state?`<b>当前状态：</b>${escapeHtml(c.state)}${c.location?` · ${escapeHtml(c.location)}`:''}<br>`:''}${c.firstChapter?`<small>第 ${c.firstChapter} 章首次记录 · 更新至第 ${c.updatedChapter || c.firstChapter} 章</small>`:''}${c.status==='needs_review'?'<br><em class="memory-pending">待复核</em>':''}</p></div>`).join('') || '<p class="muted">尚未创建人物。</p>';
+  $('#volumePlanCard').hidden = shortStory;
   $('#volumeCards').innerHTML = p.volumes.map(v => { const chapters=p.chapters.filter(c=>c.volume_id===v.id); return `<div class="volume-card"><div class="volume-no">${String(v.number).padStart(2,'0')}</div><div><strong>${escapeHtml(v.title)}</strong><p>${escapeHtml(v.goal)}</p></div><small>${chapters.length ? `${chapters.length} 章已规划` : '等待展开'}</small></div>`; }).join('') || '<p class="muted">尚未规划分卷。</p>';
+  renderShortStoryGuide(p);
+}
+
+function renderShortStoryGuide(project) {
+  const card = $('#shortStoryGuide');
+  if (project.mode !== 'short') { card.hidden = true; card.innerHTML = ''; return; }
+  const config = project.short_config || {};
+  const chapter = project.chapters[0];
+  const content = chapter?.content || '';
+  const words = Number(chapter?.word_count || 0);
+  const paragraphs = content.split(/\n\s*\n|\n+/).map(item=>item.trim()).filter(Boolean);
+  const bestRange = words >= 10000 && words <= 30000;
+  const publishRange = words >= 6000 && words <= 80000;
+  const finished = chapter?.status === 'completed';
+  let trialText = '完稿后根据段落位置计算';
+  if (paragraphs.length >= 3) {
+    const index = Math.min(paragraphs.length-2,Math.max(Math.ceil(paragraphs.length*.3),Math.ceil(paragraphs.length*.4)-1));
+    trialText = `建议在第 ${index+1} 段结束后（约全文 ${Math.round((index+1)/paragraphs.length*100)}%）设置；段尾：${paragraphs[index].slice(-70)}`;
+  }
+  const check = (ok,label,note) => `<li class="${ok?'ready':'pending'}"><i>${ok?'✓':'○'}</i><span><b>${label}</b><small>${note}</small></span></li>`;
+  card.hidden = false;
+  card.innerHTML = `<div class="short-guide-head"><div><span class="eyebrow">短故事完稿检查</span><h2>${escapeHtml(config.recommendedTitle || project.title)}</h2><p>${escapeHtml(config.category || project.genre || '分类待确认')} · ${config.perspective==='third'?'第三人称限知':'第一人称'} · 目标 ${fmt(project.target_words)} 字</p></div><span class="short-ready-pill ${finished&&publishRange?'ready':''}">${finished&&publishRange?'可进入人工终审':'创作中'}</span></div><div class="short-blueprint"><div><b>开篇钩子</b><p>${escapeHtml(config.hook || '等待生成')}</p></div><div><b>核心冲突</b><p>${escapeHtml(config.coreConflict || '等待生成')}</p></div><div><b>情绪曲线</b><p>${escapeHtml(config.emotionalArc || '等待生成')}</p></div><div><b>高潮与结局</b><p>${escapeHtml([config.climax,config.ending].filter(Boolean).join('；') || '等待生成')}</p></div></div><div class="short-check-grid"><ul>${check(publishRange,'平台篇幅',words?`${fmt(words)} 字；要求 6,000–80,000 字`:'尚未生成正文')}${check(bestRange,'推荐篇幅',words?`${fmt(words)} 字；10,000–30,000 字最佳`:'尚未生成正文')}${check(paragraphs.length>=3,'正文分段',`${paragraphs.length} 段；设置试读节点至少需要 3 段`)}${check(finished,'一篇完结',finished?'正文和审稿流程已完成':'核心冲突、高潮和结局仍需完成')}</ul><div class="trial-card"><b>建议试读节点</b><p>${escapeHtml(trialText)}</p><small>番茄发布端不允许在前 30% 的段落和最后一段设置试读节点，请在发布前人工确认。</small>${config.trialHook?`<div><b>节点前应形成的期待</b><p>${escapeHtml(config.trialHook)}</p></div>`:''}</div></div>${(config.titleOptions||[]).length?`<details class="title-options"><summary>查看推荐标题</summary><div>${config.titleOptions.map(title=>`<span>${escapeHtml(title)}</span>`).join('')}</div></details>`:''}`;
 }
 
 function renderFramework() {
   const p = state.project;
+  const shortStory = p.mode === 'short';
   const ch = state.chapter || p.chapters.find(item => item.status !== 'completed') || p.chapters.at(-1);
   const volume = ch ? p.volumes.find(item => item.id === ch.volume_id) : null;
   const captured = ch?.context_snapshot?.chapter ? ch.context_snapshot : state.context;
@@ -261,12 +312,19 @@ function renderFramework() {
   const facts = captured?.facts || [];
   const clues = captured?.clues || [];
   const models = state.health?.models || [];
-  const steps = [
+  const steps = shortStory ? [
+    ['01','创作种子','题材、核心创意、篇幅与叙事视角'],['02','完整结构','开篇钩子、核心冲突、反转、高潮与结局'],
+    ['03','全文生成','一次生成一篇完结正文，截断后可以续写'],['04','完稿检查','检查篇幅、分段、闭环与平台发布条件']
+  ] : [
     ['01','创作种子','题材、核心创意、篇幅与文风'],['02','全书蓝图','主线、世界规则与人物成长'],
     ['03','分卷目标','每一卷必须完成的阶段变化'],['04','近期章纲','每批可扩展 1–10 章'],
     ['05','逐章正文','调取前文事实、伏笔与本章目标'],['06','审稿入库','检查一致性并更新故事记忆']
   ];
-  $('#frameworkContent').innerHTML = `<div class="framework-flow">${steps.map(step=>`<article class="framework-step"><b>${step[0]}</b><strong>${step[1]}</strong><p>${step[2]}</p></article>`).join('')}</div><div class="basis-grid"><article class="basis-card"><h3>作品的固定方向</h3><p class="basis-value"><b>核心创意：</b>${escapeHtml(p.premise)}\n\n<b>文风：</b>${escapeHtml(p.tone || '未单独指定')}\n\n<b>全书主线：</b>${escapeHtml(p.outline || '尚未生成')}</p></article><article class="basis-card"><h3>${ch ? `第 ${ch.number} 章${ch.context_snapshot?.chapter?'生成时的实际依据':'当前依据'}` : '当前章节依据'}</h3><p class="basis-value"><b>分卷目标：</b>${escapeHtml(volume?.goal || '未设定')}\n\n<b>本章章纲：</b>${escapeHtml(ch?.outline || '未选择章节')}\n\n<b>详细章纲：</b>${escapeHtml(JSON.stringify(ch?.plan || {}))}\n\n<b>本章要求：</b>${escapeHtml(ch?.writing_instructions || '未指定')}\n\n<b>目标字数：</b>${fmt(ch?.target_words || 3000)} 字</p></article><article class="basis-card"><h3>实际调取的上下文</h3><ul><li>上一章结尾：${previousEnding ? (previousEnding.handoff ? `交接卡 + ${fmt(previousEnding.excerpt.length)} 字结尾片段` : `${fmt(previousEnding.excerpt.length)} 字结尾片段`) : (ch?.number===1?'开篇章节':'缺少前章正文')}</li><li>近期摘要：${prior.length ? prior.map(item=>`第${item.number}章`).join('、') : '暂无'}</li><li>有效事实：按置顶、重要度、人物相关性和时间距离选取，最多 60 条；本次 ${facts.length} 条</li><li>未回收可见线索：${clues.length} 条</li><li>人物档案会按章节知识截止过滤</li><li>重写时，后续摘要只交给审稿核对</li></ul></article><article class="basis-card"><h3>模型分工与质量检查</h3><ul>${models.map(item=>`<li>${escapeHtml(item.label)}：${escapeHtml(item.model)}（${item.enabled?'已连接':'演示'}）</li>`).join('')}<li>严重一致性问题会暂停后续章节；关闭质量审稿仍整理基础故事资料</li></ul></article></div>`;
+  const basisHeading = shortStory ? `完整故事${ch?.context_snapshot?.chapter?'生成时的实际依据':'当前依据'}` : (ch ? `第 ${ch.number} 章${ch.context_snapshot?.chapter?'生成时的实际依据':'当前依据'}` : '当前章节依据');
+  const contextItems = shortStory
+    ? `<li>叙事边界：一篇完结，不读取不存在的前章资料</li><li>结构依据：开篇钩子、核心冲突、${(p.short_config?.reversals || []).length} 次计划反转、高潮与结局</li><li>人物与背景：仅使用本故事设定和已确认资料</li><li>重写时使用原始生成快照，并核对整篇闭环</li>`
+    : `<li>上一章结尾：${previousEnding ? (previousEnding.handoff ? `交接卡 + ${fmt(previousEnding.excerpt.length)} 字结尾片段` : `${fmt(previousEnding.excerpt.length)} 字结尾片段`) : (ch?.number===1?'开篇章节':'缺少前章正文')}</li><li>近期摘要：${prior.length ? prior.map(item=>`第${item.number}章`).join('、') : '暂无'}</li><li>有效事实：按置顶、重要度、人物相关性和时间距离选取，最多 60 条；本次 ${facts.length} 条</li><li>未回收可见线索：${clues.length} 条</li><li>人物档案会按章节知识截止过滤</li><li>重写时，后续摘要只交给审稿核对</li>`;
+  $('#frameworkContent').innerHTML = `<div class="framework-flow">${steps.map(step=>`<article class="framework-step"><b>${step[0]}</b><strong>${step[1]}</strong><p>${step[2]}</p></article>`).join('')}</div><div class="basis-grid"><article class="basis-card"><h3>作品的固定方向</h3><p class="basis-value"><b>核心创意：</b>${escapeHtml(p.premise)}\n\n<b>文风：</b>${escapeHtml(p.tone || '未单独指定')}\n\n<b>${shortStory?'完整故事主线':'全书主线'}：</b>${escapeHtml(p.outline || '尚未生成')}</p></article><article class="basis-card"><h3>${basisHeading}</h3><p class="basis-value">${shortStory?'':`<b>分卷目标：</b>${escapeHtml(volume?.goal || '未设定')}\n\n`}<b>${shortStory?'完整故事结构':'本章章纲'}：</b>${escapeHtml(ch?.outline || '未选择内容')}\n\n<b>详细结构：</b>${escapeHtml(JSON.stringify(ch?.plan || {}))}\n\n<b>写作要求：</b>${escapeHtml(ch?.writing_instructions || '未指定')}\n\n<b>目标字数：</b>${fmt(ch?.target_words || (shortStory?15000:3000))} 字</p></article><article class="basis-card"><h3>实际调取的上下文</h3><ul>${contextItems}</ul></article><article class="basis-card"><h3>模型分工与质量检查</h3><ul>${models.map(item=>`<li>${escapeHtml(item.label)}：${escapeHtml(item.model)}（${item.enabled?'已连接':'演示'}）</li>`).join('')}<li>${shortStory?'完稿检查会核对核心冲突、反转、高潮、结局和正文边界':'严重一致性问题会暂停后续章节；关闭质量审稿仍整理基础故事资料'}</li></ul></article></div>`;
 }
 
 function renderMemories() {
@@ -337,7 +395,7 @@ async function deleteProject(id) {
   } catch (error) { toast(error.message, true); }
 }
 
-const taskText = task => ({plan:'全书规划','plan-foundation':'全书骨架','plan-chapters':'近期章纲','extend-plan':'扩展章纲',write:'正文写作',continue:'续写草稿',review:'正文审稿',extract:'故事资料整理',similarity:'网络查重',rewrite:'章节重写','rewrite-review':'重写审稿','connection-test':'连接测试'}[task] || task || '模型任务');
+const taskText = task => ({plan:'全书规划','short-plan':'短故事结构','plan-foundation':'全书骨架','plan-chapters':'近期章纲','extend-plan':'扩展章纲',write:'正文写作',continue:'续写草稿',review:'正文审稿',extract:'故事资料整理',similarity:'网络查重',rewrite:'章节重写','rewrite-review':'重写审稿','connection-test':'连接测试'}[task] || task || '模型任务');
 const modelStatusText = status => ({running:'进行中',completed:'已完成',failed:'失败'}[status] || status);
 const eventTime = value => value ? new Date(value).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
 
@@ -372,7 +430,7 @@ function renderModelMonitor() {
 
 function renderModelEvent(item) {
   const target = item.chapter_id ? (state.project.chapters.find(ch=>ch.id===item.chapter_id) || null) : null;
-  const targetText = target ? `第${target.number}章《${target.title}》` : (item.task === 'plan' ? '全书' : '—');
+  const targetText = target ? (state.project.mode === 'short' ? `完整故事《${state.project.title}》` : `第${target.number}章《${target.title}》`) : (['plan','short-plan'].includes(item.task) ? (state.project.mode === 'short' ? '完整故事' : '全书') : '—');
   const usage = parseUsage(item.usage);
   const response = item.response_text || item.response_preview || '';
   const request = item.request_text || item.request_preview || '';
@@ -416,7 +474,7 @@ async function createProject(event) {
   submit.disabled = true;
   try {
     const project = await api('/api/projects', { method:'POST', body:JSON.stringify(Object.fromEntries(form)) });
-    $('#newProjectDialog').close(); formElement.reset();
+    $('#newProjectDialog').close(); formElement.reset(); configureProjectMode();
     clearInterval(state.poll); clearInterval(state.rewritePoll); clearInterval(state.similarityPoll); clearInterval(state.modelPoll);
     state.chapter = null; state.context = null; state.run = null; state.rewrite = null; state.modelEvents = [];
     toast('作品已创建，正在生成第一版方案');
@@ -430,7 +488,9 @@ async function createProject(event) {
 
 async function createPlan() {
   if (!state.project) return;
+  const shortStory = state.project.mode === 'short';
   const extending = state.project.chapters.length > 0;
+  if (shortStory && extending) return toast('短故事使用一篇完结结构，不需要扩展章纲',true);
   if (extending) {
     if (editorDirty()) return toast('请先保存当前章纲和正文再扩展', true);
     const next = Math.max(...state.project.chapters.map(ch => ch.number)) + 1;
@@ -439,14 +499,14 @@ async function createPlan() {
     $('#extendVolume').innerHTML = state.project.volumes.map(v => `<option value="${v.number}" ${v.number===volumeNumber?'selected':''}>第${v.number}卷 · ${escapeHtml(v.title)}</option>`).join('');
     $('#extendPlanDialog').showModal(); return;
   }
-  const btn = $('#planBtn'); btn.disabled = true; btn.textContent = extending ? '正在扩展…' : '正在规划…';
+  const btn = $('#planBtn'); btn.disabled = true; btn.textContent = shortStory ? '正在设计短故事…' : (extending ? '正在扩展…' : '正在规划…');
   try {
     const action = extending ? 'extend-plan' : 'plan';
     state.project = await api(`/api/projects/${state.project.id}/${action}`, { method:'POST', body:'{}' });
     state.chapter = null; renderWorkspace();
-    toast(extending ? '未来 10 章已经加入近期章纲' : (state.health?.aiEnabled ? '创作方案已经生成' : '演示方案已经生成，可立即试写'));
+    toast(shortStory ? '短故事结构已经生成，可以检查后写完整正文' : (extending ? '未来 10 章已经加入近期章纲' : (state.health?.aiEnabled ? '创作方案已经生成' : '演示方案已经生成，可立即试写')));
   } catch(error) { toast(error.message, true); }
-  finally { btn.disabled = false; btn.textContent = state.project?.chapters?.length ? '扩展近期章纲' : '生成创作方案'; }
+  finally { btn.disabled = false; btn.textContent = shortStory ? '生成短故事方案' : (state.project?.chapters?.length ? '扩展近期章纲' : '生成创作方案'); }
 }
 
 async function extendPlan(event) {
@@ -470,9 +530,14 @@ async function openWriteDialog(chapterId) {
   if (state.project.latest_run?.status === 'paused') return resumeWriting(state.project.latest_run.id);
   try { if (editorDirty()) await persistEditor(); } catch(error) { return toast(error.message,true); }
   const available = state.project.chapters.filter(ch => ch.status !== 'completed' && !ch.content.trim());
-  if (!available.length) return toast('待写章节已写完，请先扩展章纲；修改已有正文请使用重写',true);
+  const shortStory = state.project.mode === 'short';
+  if (!available.length) return toast(shortStory ? '完整故事已有正文，请使用续写、审稿或重写功能' : '待写章节已写完，请先扩展章纲；修改已有正文请使用重写',true);
   const preferred = typeof chapterId === 'string' ? chapterId : (available.find(ch=>ch.id===state.chapter?.id)?.id || available[0].id);
-  $('#writeChapterChoices').innerHTML = available.map(ch => `<label class="chapter-choice"><input type="checkbox" name="chapterIds" value="${ch.id}" ${ch.id===preferred?'checked':''}><span><strong>第 ${ch.number} 章 · ${escapeHtml(ch.title)} · 约 ${fmt(ch.target_words)} 字</strong><small>${escapeHtml(ch.outline || '请先填写本章章纲')}\n要求：${escapeHtml(ch.writing_instructions || '遵循章纲和全书文风')}</small></span></label>`).join('');
+  $('#writeDialogTitle').textContent = shortStory ? '生成一篇完整短故事' : '选择这次要写的章节';
+  $('#writeDialogNote').textContent = shortStory ? '系统会根据开篇钩子、核心冲突、递进反转、高潮和结局一次生成完整稿件。输出达到模型上限时会保存草稿，可继续续写。' : '勾选 1–10 章，按章号顺序逐章写作、检查并保存。使用各章已保存的章纲、要求和目标字数。已有正文的章节请使用“重写本章”。';
+  $('#writeQueueActions').hidden = shortStory;
+  $('#writeForm [type=submit]').textContent = shortStory ? '✦ 开始生成完整故事' : '✦ 开始写作';
+  $('#writeChapterChoices').innerHTML = available.map(ch => `<label class="chapter-choice"><input type="checkbox" name="chapterIds" value="${ch.id}" ${ch.id===preferred?'checked':''}><span><strong>${shortStory?'完整故事':`第 ${ch.number} 章`} · ${escapeHtml(ch.title)} · 约 ${fmt(ch.target_words)} 字</strong><small>${escapeHtml(ch.outline || (shortStory?'请先填写完整故事结构':'请先填写本章章纲'))}\n要求：${escapeHtml(ch.writing_instructions || '遵循结构和作品文风')}</small></span></label>`).join('');
   $('#writeChapterChoices').onchange = updateWriteSelection;
   $('#selectNextChapters').onclick = () => { $$('#writeChapterChoices input').forEach((box,i)=>box.checked=i<10); updateWriteSelection(); };
   $('#clearChapterSelection').onclick = () => { $$('#writeChapterChoices input').forEach(box=>box.checked=false); updateWriteSelection(); };
@@ -484,7 +549,8 @@ function updateWriteSelection() {
   const ids = $$('#writeChapterChoices input:checked').map(box=>box.value);
   const selected = state.project.chapters.filter(ch=>ids.includes(ch.id));
   const gaps = selected.length ? state.project.chapters.filter(ch=>ch.number<selected.at(-1).number && ch.status!=='completed' && !ids.includes(ch.id)) : [];
-  $('#writeSelectionSummary').textContent = selected.length ? `将依次写：${selected.map(ch=>`第${ch.number}章`).join(' → ')}。${gaps.length ? '前文存在未写章节，AI 不会把这些章纲当作已发生事实。' : ''}` : '尚未选择章节';
+  const shortStory = state.project?.mode === 'short';
+  $('#writeSelectionSummary').textContent = selected.length ? (shortStory ? `将生成一篇约 ${fmt(selected[0].target_words)} 字、一次完结的完整故事。` : `将依次写：${selected.map(ch=>`第${ch.number}章`).join(' → ')}。${gaps.length ? '前文存在未写章节，AI 不会把这些章纲当作已发生事实。' : ''}`) : `尚未选择${shortStory?'稿件':'章节'}`;
   $('#writeForm [type=submit]').disabled = !ids.length || ids.length>10;
 }
 
@@ -516,7 +582,8 @@ async function resumeWriting(runId) {
 
 function setRunningUI(run) {
   const active = run?.status === 'running';
-  $('#writeBtn').textContent = active ? (run.current_step === 'pausing' ? '正在暂停…' : '暂停写作') : (run?.status === 'paused' ? '▶ 继续任务' : '✦ 自动写作');
+  const shortStory = state.project?.mode === 'short';
+  $('#writeBtn').textContent = active ? (run.current_step === 'pausing' ? '正在暂停…' : '暂停写作') : (run?.status === 'paused' ? '▶ 继续任务' : (shortStory?'✦ 自动写完整故事':'✦ 自动写作'));
   $('#writeBtn').disabled = active && run.current_step === 'pausing';
   $('#runStatus').textContent = run?.message || '等待创作';
   $('#runStatus').classList.toggle('running', active);
@@ -590,15 +657,17 @@ async function persistEditor() {
 async function saveChapter() {
   try {
     await persistEditor();
-    await openProject(state.project.id, true); await refreshDashboard(); toast('章纲、写作要求和正文已保存');
+    const shortStory=state.project.mode==='short';
+    await openProject(state.project.id, true); await refreshDashboard(); toast(shortStory?'故事结构、写作要求和正文已保存':'章纲、写作要求和正文已保存');
   } catch(error) { toast(error.message, true); }
 }
 
 function openRewriteDialog() {
   if (!state.chapter?.content) return toast('本章还没有正文，请先完成写作', true);
   const area = $('#rewriteContent');
-  $('#rewriteDialogTitle').textContent = `重写第 ${state.chapter.number} 章《${state.chapter.title}》`;
-  area.innerHTML = `<form id="rewriteForm" class="rewrite-form"><p class="rewrite-intro">新稿依据已保存的章纲和要求创作。写作模型只读取本章之前的有效记忆；后续摘要仅供审稿核对，不交给写作模型。生成后先给你对照，只有点击“采用候选稿”才会替换当前正文。</p><label>你希望怎样重写？</label><div class="rewrite-presets"><button type="button" class="rewrite-preset">加强冲突和节奏</button><button type="button" class="rewrite-preset">增加人物对话</button><button type="button" class="rewrite-preset">改善文笔和氛围</button><button type="button" class="rewrite-preset">更换场景展开方式</button><button type="button" class="rewrite-preset">重做结尾钩子</button></div><textarea id="rewriteInstruction" placeholder="例如：保留发现密室的情节，但减少解释性叙述，加强顾临舟和沈栖月之间的不信任。"></textarea><div class="dialog-actions"><button type="button" class="ghost" id="cancelRewriteBtn">取消</button><button class="primary" type="submit">生成重写候选稿</button></div></form>`;
+  const shortStory=state.project.mode==='short';
+  $('#rewriteDialogTitle').textContent = shortStory ? `重写短故事《${state.project.title}》` : `重写第 ${state.chapter.number} 章《${state.chapter.title}》`;
+  area.innerHTML = `<form id="rewriteForm" class="rewrite-form"><p class="rewrite-intro">新稿依据已保存的${shortStory?'完整故事结构':'章纲'}和要求创作。生成后先给你对照，只有点击“采用候选稿”才会替换当前正文。</p><label>你希望怎样重写？</label><div class="rewrite-presets"><button type="button" class="rewrite-preset">加强冲突和节奏</button><button type="button" class="rewrite-preset">增加人物对话</button><button type="button" class="rewrite-preset">改善文笔和氛围</button><button type="button" class="rewrite-preset">更换场景展开方式</button><button type="button" class="rewrite-preset">${shortStory?'强化高潮和结局闭环':'重做结尾钩子'}</button></div><textarea id="rewriteInstruction" placeholder="${shortStory?'例如：保留身份反转，前三段更快进入事件，强化高潮选择并让结尾回应开篇。':'例如：保留发现密室的情节，但减少解释性叙述，加强顾临舟和沈栖月之间的不信任。'}"></textarea><div class="dialog-actions"><button type="button" class="ghost" id="cancelRewriteBtn">取消</button><button class="primary" type="submit">生成重写候选稿</button></div></form>`;
   area.querySelectorAll('.rewrite-preset').forEach(btn => btn.onclick = () => {
     const input = $('#rewriteInstruction');
     input.value = input.value ? `${input.value}；${btn.textContent}` : btn.textContent;
@@ -642,7 +711,7 @@ async function startRewrite(event) {
 function showRewrite(job) {
   state.rewrite = job;
   const chapter = job.context_snapshot?.chapter || state.project.chapters.find(ch=>ch.id===job.chapter_id);
-  $('#rewriteDialogTitle').textContent = `重写第 ${chapter.number} 章《${chapter.title}》`;
+  $('#rewriteDialogTitle').textContent = state.project.mode==='short' ? `重写短故事《${state.project.title}》` : `重写第 ${chapter.number} 章《${chapter.title}》`;
   renderRewrite(job);
   if (!$('#rewriteDialog').open) $('#rewriteDialog').showModal();
 }

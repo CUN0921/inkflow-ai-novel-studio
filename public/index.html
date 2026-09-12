@@ -40,7 +40,7 @@
 
       <section id="dashboardView" class="view page">
         <div class="hero-row">
-          <div><span class="eyebrow">你的创作空间</span><h1>让故事持续生长。</h1><p>从一个念头开始，规划、创作和照看你的长篇世界。</p></div>
+          <div><span class="eyebrow">你的创作空间</span><h1>让故事找到合适的长度。</h1><p>从一篇完结的短故事，到持续生长的长篇世界。</p></div>
           <button class="primary hero-action" id="heroNewBtn">＋ 开始一个新故事</button>
         </div>
         <div class="stats" id="stats"></div>
@@ -83,7 +83,7 @@
           </div>
         </div>
 
-        <div class="tab-panel" id="outlineTab" hidden><div class="content-grid"><article class="paper-card"><label>全书主线</label><div id="outlineText" class="prose"></div></article><article class="paper-card"><label>世界规则</label><div id="worldText" class="prose"></div></article><article class="paper-card span-2"><label>主要人物</label><div id="characterCards" class="character-grid"></div></article><article class="paper-card span-2"><label>分卷结构</label><div id="volumeCards"></div></article></div></div>
+        <div class="tab-panel" id="outlineTab" hidden><div class="content-grid"><article id="shortStoryGuide" class="paper-card span-2 short-story-guide" hidden></article><article class="paper-card"><label id="outlineLabel">全书主线</label><div id="outlineText" class="prose"></div></article><article class="paper-card"><label id="worldLabel">世界规则</label><div id="worldText" class="prose"></div></article><article class="paper-card span-2"><label>主要人物</label><div id="characterCards" class="character-grid"></div></article><article class="paper-card span-2" id="volumePlanCard"><label id="volumePlanLabel">分卷结构</label><div id="volumeCards"></div></article></div></div>
         <div class="tab-panel" id="frameworkTab" hidden><div id="frameworkContent"></div></div>
         <div class="tab-panel" id="memoryTab" hidden><div class="memory-toolbar"><div><h3>已发生事实</h3><p>只收录正文中已经发生的内容，每条都有章节出处。</p></div><div class="memory-filters"><button type="button" class="active" data-memory-filter="all">全部</button><button type="button" data-memory-filter="character">人物</button><button type="button" data-memory-filter="event">事件</button><button type="button" data-memory-filter="item">物品</button><button type="button" data-memory-filter="knowledge">认知</button><button type="button" data-memory-filter="relationship">关系</button><button type="button" data-memory-filter="timeline">时间线</button></div></div><div id="memoryList" class="memory-list"></div></div>
         <div class="tab-panel" id="issuesTab" hidden><div id="issuesList" class="issues-list"></div></div>
@@ -96,7 +96,8 @@
     <form id="newProjectForm" method="dialog">
       <div class="dialog-head"><div><span class="eyebrow">新故事</span><h2>先给故事一颗种子</h2></div><button type="button" class="icon-btn close-dialog">×</button></div>
       <label>作品名称<input name="title" required placeholder="例如：雾港来信" /></label>
-      <div class="form-row"><label>题材<input name="genre" placeholder="悬疑、科幻、仙侠……" /></label><label>目标字数<select name="targetWords"><option value="300000">30 万字</option><option value="500000">50 万字</option><option value="1000000">100 万字</option></select></label></div>
+      <div class="form-row"><label>作品形式<select name="mode" id="projectMode"><option value="serial">长篇连载</option><option value="short">短故事 · 一篇完结</option></select></label><label>题材<input name="genre" placeholder="悬疑、现实情感、科幻……" /></label></div>
+      <div class="form-row"><label>目标字数<select name="targetWords" id="projectTargetWords"><option value="300000">30 万字</option><option value="500000">50 万字</option><option value="1000000">100 万字</option></select></label><label id="perspectiveField" hidden>叙事视角<select name="perspective"><option value="first">第一人称 · 推荐</option><option value="third">第三人称限知</option></select></label></div>
       <label>核心创意<textarea name="premise" required rows="4" placeholder="用几句话写下主角、冲突和最吸引你的设想"></textarea></label>
       <label>期待的文风<input name="tone" placeholder="例如：克制冷峻、节奏明快、第三人称限知" /></label>
       <div class="dialog-actions"><button type="button" class="ghost close-dialog">取消</button><button class="primary" type="submit">创建并规划</button></div>
@@ -105,9 +106,9 @@
 
   <dialog id="writeDialog">
     <form id="writeForm" method="dialog">
-      <div class="dialog-head"><div><span class="eyebrow">自动创作</span><h2>选择这次要写的章节</h2></div><button type="button" class="icon-btn close-dialog">×</button></div>
-      <p class="dialog-note">勾选 1–10 章，按章号顺序逐章写作、检查并保存。使用各章已保存的章纲、要求和目标字数。已有正文的章节请使用“重写本章”。</p>
-      <div class="queue-actions"><button type="button" class="ghost" id="selectNextChapters">选择前 10 个待写章节</button><button type="button" class="ghost" id="clearChapterSelection">清空选择</button></div>
+      <div class="dialog-head"><div><span class="eyebrow">自动创作</span><h2 id="writeDialogTitle">选择这次要写的章节</h2></div><button type="button" class="icon-btn close-dialog">×</button></div>
+      <p class="dialog-note" id="writeDialogNote">勾选 1–10 章，按章号顺序逐章写作、检查并保存。使用各章已保存的章纲、要求和目标字数。已有正文的章节请使用“重写本章”。</p>
+      <div class="queue-actions" id="writeQueueActions"><button type="button" class="ghost" id="selectNextChapters">选择前 10 个待写章节</button><button type="button" class="ghost" id="clearChapterSelection">清空选择</button></div>
       <div id="writeChapterChoices" class="chapter-choices"></div>
       <p id="writeSelectionSummary" class="dialog-note" aria-live="polite"></p>
       <div class="dialog-actions"><button type="button" class="ghost close-dialog">取消</button><button class="primary" type="submit">✦ 开始写作</button></div>

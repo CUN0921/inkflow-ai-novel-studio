@@ -159,7 +159,9 @@ async function body(req) {
 function exportText(res, project) {
   if (!project) return json(res, 404, { error:'作品不存在' });
   const complete = project.chapters.filter(ch => ch.status === 'completed');
-  const text = [`《${project.title}》`, '', project.outline, '', ...complete.flatMap(ch => [`第${ch.number}章 ${ch.title}`, '', ch.content, ''])].join('\n');
+  const text = project.mode === 'short'
+    ? complete.map(ch=>ch.content).filter(Boolean).join('\n\n')
+    : [`《${project.title}》`, '', project.outline, '', ...complete.flatMap(ch => [`第${ch.number}章 ${ch.title}`, '', ch.content, ''])].join('\n');
   const name = encodeURIComponent(`${project.title}.txt`);
   res.writeHead(200, {
     'Content-Type':'text/plain; charset=utf-8',
