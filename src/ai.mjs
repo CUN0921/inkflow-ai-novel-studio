@@ -106,6 +106,17 @@ export class AIClient {
       event({status:'completed', message:validate ? '模型返回已校验，可以保存' : '模型已返回结果', responseText:text, responsePreview:preview(text,1200), responseLength:text.length, usage, durationMs:Date.now()-started});
       return {text, value, usage, model:this.model, role:this.role};
     } catch (error) {
+      if (error.message === 'fetch failed') {
+        const code = error.cause?.code || error.cause?.errors?.find(item => item.code)?.code;
+        const advice = ['EACCES','EPERM'].includes(code)
+          ? '当前服务进程没有外网连接权限，请在正常桌面环境重新启动墨流，或允许服务联网'
+          : ['ENOTFOUND','EAI_AGAIN'].includes(code)
+            ? '无法解析模型服务地址，请检查 API 地址和 DNS'
+            : ['ETIMEDOUT','UND_ERR_CONNECT_TIMEOUT'].includes(code)
+              ? '连接模型服务超时，请检查网络或代理'
+              : '无法连接模型服务，请检查网络、代理及 API 地址';
+        error.message = `${this.role}模型连接失败${code ? `（${code}）` : ''}：${advice}`;
+      }
       event({status:'failed', message:error.message, error:error.message, responseText:error.responseText || '', responseLength:error.responseText?.length || 0, usage:error.usage || null, durationMs:Date.now()-started});
       throw error;
     }

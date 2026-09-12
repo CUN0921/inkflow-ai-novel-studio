@@ -2,6 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AIClient, ModelRouter, parseJsonText } from '../src/ai.mjs';
 
+test('网络权限拒绝会向调用者和模型动态提供明确原因', async () => {
+  const events=[];
+  const client=new AIClient({apiKey:'test-secret',model:'test',baseUrl:'https://example.test/v1',role:'故事规划',emit:event=>events.push(event),fetchImpl:async()=>{
+    throw new TypeError('fetch failed',{cause:new AggregateError([Object.assign(new Error('blocked'),{code:'EACCES'})])});
+  }});
+  await assert.rejects(()=>client.generate({instructions:'规划',input:'故事'}),/EACCES.*没有外网连接权限/);
+  assert.equal(events.at(-1).status,'failed');
+  assert.match(events.at(-1).error,/重新启动墨流/);
+  assert.ok(!JSON.stringify(events).includes('test-secret'));
+});
+
 test('JSON 解析可修复模型在字符串中返回的未转义控制字符', () => {
   const value = parseJsonText('```json\n{"summary":"第一行\n第二行\t补充","note":"含\u0001控制符"}\n```');
   assert.equal(value.summary, '第一行\n第二行\t补充');
